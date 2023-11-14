@@ -7,14 +7,9 @@
 #include <sys/stat.h>
 #include <time.h>
 
-void printXYSize(char *f)
+void printXYSize(char *f, char* rez)
 {
     char *file = f;
-    // struct stat buf;
-    // if(stat(file,buf) == -1)
-    // {
-
-    // }
     int fd;
     fd = open (file, O_RDONLY);
     if (fd == -1)
@@ -44,8 +39,11 @@ void printXYSize(char *f)
         perror("error read");
         exit(1);
     }
-    printf("inaltime %d\n", inaltimea);
-    printf("lungimea %d\n", lungimea);
+    char buff[32];
+    sprintf(rez, "inaltime %d\n", inaltimea);
+    sprintf(buff, "lungimea %d\n", lungimea);
+    strcat(rez, buff);
+
     if(close(fd) ==  -1)
     {
         perror("error close");
@@ -104,38 +102,111 @@ char* getOthersPermisions(char* permisions, struct stat stats){
     return permisions;
 }
 
-void printStats(char* name, struct stat stats){
+void printStats(char* name, struct stat stats, int fd){
     char permisions[4];
-
-    printf("Numele: %s\n", name);
+    char printableString[1024];
+    sprintf(printableString, "Name: %s\n", name);
     if(strstr(name, ".bmp"))
     {
-        printXYSize(name);
+        char printableSize[128];
+        printXYSize(name, printableSize);
+        strcat(printableString, printableSize);
     }
-    printf("Dimensiune: %ld\n", stats.st_size);
-    printf("User: %d\n", stats.st_uid);
-    printf("Last Modification: %s", ctime(&stats.st_mtime));
-    printf("Legaturi: %ld\n", stats.st_nlink);
-    printf("Permisiuni User: %s\n", (getUserPermisions(permisions,stats)));
-    printf("Permisiuni Group: %s\n", (getGroupPermisions(permisions,stats)));
-    printf("Permisiuni Others: %s\n", (getOthersPermisions(permisions,stats)));
-    printf("\n");
+    // write(fd, &stats.st_size, sizeof(long int));
+    char buff[128];
+    sprintf(buff, "Dimensiune: %ld\n", stats.st_size);
+    strcat(printableString, buff);
+    sprintf(buff, "User: %d\n", stats.st_uid);
+    strcat(printableString, buff);
+    sprintf(buff, "Last Modification: %s", ctime(&stats.st_mtime));
+    strcat(printableString, buff);
+    sprintf(buff, "Legaturi: %ld\n", stats.st_nlink);
+    strcat(printableString, buff);
+    sprintf(buff, "Permisiuni User: %s\n", (getUserPermisions(permisions,stats)));
+    strcat(printableString, buff);
+    sprintf(buff, "Permisiuni Group: %s\n", (getGroupPermisions(permisions,stats)));
+    strcat(printableString, buff);
+    sprintf(buff, "Permisiuni Others: %s\n", (getOthersPermisions(permisions,stats)));
+    strcat(printableString, buff);
+    sprintf(buff, "\n");
+    strcat(printableString, buff);
+    if(write(fd,printableString, strlen(printableString)) == -1)
+    {
+      perror("error write");
+      exit(1);
+    }
 }
 
-void printStatsDir(char* name, struct stat stats){
+void printStatsLeg(char* name, struct stat stats, struct stat lstats, int fd){
     char permisions[4];
+    char printableString[1024];
 
-    printf("Numele: %s\n", name);
-    printf("User: %d\n", stats.st_uid);
-    printf("Permisiuni User: %s\n", (getUserPermisions(permisions,stats)));
-    printf("Permisiuni Group: %s\n", (getGroupPermisions(permisions,stats)));
-    printf("Permisiuni Others: %s\n", (getOthersPermisions(permisions,stats)));
-    printf("\n");
+    sprintf(printableString, "Numele: %s\n", name);
+
+    char buff[128];
+
+    sprintf(buff, "Dimensiune fisier: %ld\n", stats.st_size);
+    strcat(printableString, buff);
+    sprintf(buff, "Dimensiune legatura: %ld\n", lstats.st_size);
+    strcat(printableString, buff);
+    sprintf(buff, "Permisiuni User: %s\n", (getUserPermisions(permisions,stats)));
+    strcat(printableString, buff);
+    sprintf(buff, "Permisiuni Group: %s\n", (getGroupPermisions(permisions,stats)));
+    strcat(printableString, buff);
+    sprintf(buff, "Permisiuni Others: %s\n", (getOthersPermisions(permisions,stats)));
+    strcat(printableString, buff);
+    sprintf(buff, "\n");
+    strcat(printableString, buff);
+
+    if(write(fd, printableString, strlen(printableString)) == -1)
+    {
+      perror("error write");
+      exit(1);
+    }
+}
+
+void printStatsDir(char* name, struct stat stats, int fd){
+    char permisions[4];
+    char printableString[1024];
+
+    sprintf(printableString, "Numele: %s\n", name);
+
+    char buff[128];
+    sprintf(buff, "User: %d\n", stats.st_uid);
+    strcat(printableString, buff);
+    sprintf(buff, "Permisiuni User: %s\n", (getUserPermisions(permisions,stats)));
+    strcat(printableString, buff);
+    sprintf(buff, "Permisiuni Group: %s\n", (getGroupPermisions(permisions,stats)));
+    strcat(printableString, buff);
+    sprintf(buff, "Permisiuni Others: %s\n", (getOthersPermisions(permisions,stats)));
+    strcat(printableString, buff);
+    sprintf(buff, "\n");
+    strcat(printableString, buff);
+
+    if(write(fd, printableString, strlen(printableString)) == -1)
+    {
+      perror("error write");
+      exit(1);
+    }
 }
 
 void citire_director(char *director){
     DIR *dir;
     dir = opendir (director);
+    char *file = "statistics.txt";
+    struct stat st;
+    if(stat(file,&st) == -1)
+    {
+      perror("statistics.txt stat error");
+      exit(1);
+    }
+    int fd;
+    fd = open (file, O_WRONLY);
+    if (fd == -1)
+    {
+        perror("error open write");
+        exit (-1);
+    }
 
     if(dir == NULL){
         perror("open director");
@@ -155,19 +226,23 @@ void citire_director(char *director){
                 perror("err stat");
                 exit(1);
             }
-            if( S_ISLNK(stats.st_mode) )
+            if( entry->d_type == DT_LNK)
             {
-                if(lstat(path, &stats) == -1)
+                struct stat lstats;
+                if(lstat(path, &lstats) == -1)
                 {
                     perror("err stat");
                     exit(1);
                 }
+                printStatsLeg(entry -> d_name, stats, lstats, fd);
             }
-            if( S_ISDIR(stats.st_mode) )
-                printStatsDir(entry -> d_name, stats);
             else
-                printStats(entry -> d_name, stats);
-            
+            {
+                if( S_ISDIR(stats.st_mode) )
+                    printStatsDir(entry -> d_name, stats, fd);
+                else
+                    printStats(entry -> d_name, stats, fd);
+            }
         }
     }
 
@@ -175,18 +250,23 @@ void citire_director(char *director){
         perror("closed director");
         exit(1);
     }
+    if(close(fd) == -1)
+    {
+        perror("error close");
+        exit(1);
+    }
     
 }
 
 int main (int argc, char *argv[])
 {
-    if(argc != 3)
+    if(argc != 2)
     {
         perror("wrong number of arguments");
         exit(1);
     }
     
-    char *director = argv[2];
+    char *director = argv[1];
     citire_director(director);
     return 0;
 }
