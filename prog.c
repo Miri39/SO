@@ -7,14 +7,13 @@
 #include <sys/stat.h>
 #include <time.h>
 
-void printXYSize(char *f, char* rez)
+void printXYSize(char *file, char* rez)
 {
-    char *file = f;
     int fd;
     fd = open (file, O_RDONLY);
     if (fd == -1)
     {
-        perror("error open");
+        perror("error open xy");
         exit (-1);
     }
     int inaltimea, lungimea;
@@ -102,17 +101,17 @@ char* getOthersPermisions(char* permisions, struct stat stats){
     return permisions;
 }
 
-void printStats(char* name, struct stat stats, int fd){
+void printStats(char* path, struct stat stats, int fd){
     char permisions[4];
     char printableString[1024];
+    char *name = strchr(path, '/') + 1;
     sprintf(printableString, "Name: %s\n", name);
     if(strstr(name, ".bmp"))
     {
         char printableSize[128];
-        printXYSize(name, printableSize);
+        printXYSize(path, printableSize);
         strcat(printableString, printableSize);
     }
-    // write(fd, &stats.st_size, sizeof(long int));
     char buff[128];
     sprintf(buff, "Dimensiune: %ld\n", stats.st_size);
     strcat(printableString, buff);
@@ -190,26 +189,12 @@ void printStatsDir(char* name, struct stat stats, int fd){
     }
 }
 
-void citire_director(char *director){
+void citire_director(char *director_intrare, char *director_iesire){
     DIR *dir;
-    dir = opendir (director);
-    char *file = "statistics.txt";
-    struct stat st;
-    if(stat(file,&st) == -1)
-    {
-      perror("statistics.txt stat error");
-      exit(1);
-    }
-    int fd;
-    fd = open (file, O_WRONLY);
-    if (fd == -1)
-    {
-        perror("error open write");
-        exit (-1);
-    }
+    dir = opendir (director_intrare);
 
     if(dir == NULL){
-        perror("open director");
+        perror("open director_intrare");
         exit(1);
     }
 
@@ -220,7 +205,23 @@ void citire_director(char *director){
     {
         if(strcmp(entry -> d_name, ".") != 0 && strcmp(entry -> d_name, "..") != 0)
         {
-            sprintf(path, "%s/%s", director, entry -> d_name);
+            char file[300];
+            sprintf(file, "%s/%s_statistics.txt",director_iesire, entry -> d_name);
+            int fd;
+            fd = open (file, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+            if (fd == -1)
+            {
+                perror("error open write");
+                exit (-1);
+            }
+            struct stat st;
+            if(stat(file,&st) == -1)
+            {
+            perror("statistics.txt stat error");
+            exit(1);
+            }
+
+            sprintf(path, "%s/%s", director_intrare, entry -> d_name);
             if(stat(path, &stats) == -1)
             {
                 perror("err stat");
@@ -241,18 +242,18 @@ void citire_director(char *director){
                 if( S_ISDIR(stats.st_mode) )
                     printStatsDir(entry -> d_name, stats, fd);
                 else
-                    printStats(entry -> d_name, stats, fd);
+                    printStats(path, stats, fd);
+            }
+            if(close(fd) == -1)
+            {
+                perror("error close");
+                exit(1);
             }
         }
     }
 
     if(closedir(dir) == -1){
-        perror("closed director");
-        exit(1);
-    }
-    if(close(fd) == -1)
-    {
-        perror("error close");
+        perror("closed director_intrare");
         exit(1);
     }
     
@@ -260,13 +261,14 @@ void citire_director(char *director){
 
 int main (int argc, char *argv[])
 {
-    if(argc != 2)
+    if(argc != 3)
     {
         perror("wrong number of arguments");
         exit(1);
     }
     
-    char *director = argv[1];
-    citire_director(director);
+    char *director_intrare = argv[1];
+    char *directpr_iesire = argv[2];
+    citire_director(director_intrare, directpr_iesire);
     return 0;
 }
