@@ -5,7 +5,9 @@
 #include <dirent.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 #include <time.h>
+#include <sys/wait.h>
 
 void printXYSize(char *file, char* rez)
 {
@@ -101,6 +103,53 @@ char* getOthersPermisions(char* permisions, struct stat stats){
     return permisions;
 }
 
+void makeGray(char *file)
+{
+    int fd;
+    fd = open (file, O_RDWR);
+    if (fd == -1)
+    {
+        perror("error open gray");
+        exit (-1);
+    }
+    float gray;
+    unsigned char rgb[3];
+    lseek(fd, 54, SEEK_SET);
+    for(int i = 0; i < 3; i++)
+        if(read(fd, &rgb[i], sizeof(unsigned char)) != sizeof(unsigned char))
+        {
+            if(close(fd) ==  -1)
+            {
+                perror("error close rgb");
+                exit(1);
+            }
+            perror("error read rgb");
+            exit(1);
+        }
+    gray = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.144 + rgb[2];
+    printf("--------------%f\n", gray);
+    
+    lseek(fd, 54, SEEK_SET);
+    for(int i = 0; i < 3; i++)
+        if(write(fd, &gray, sizeof(unsigned char)) != 1)
+        {
+            if(close(fd) ==  -1)
+            {
+                perror("error close rgb");
+                exit(1);
+            }
+            perror("error read rgb");
+            exit(1);
+        }
+    
+    if(close(fd) ==  -1)
+    {
+        perror("error close rgb");
+        exit(1);
+    }
+    
+}
+
 void printStats(char* path, struct stat stats, int fd){
     char permisions[4];
     char printableString[1024];
@@ -111,6 +160,24 @@ void printStats(char* path, struct stat stats, int fd){
         char printableSize[128];
         printXYSize(path, printableSize);
         strcat(printableString, printableSize);
+        pid_t pid;
+        int status;
+        pid = fork();
+        if(pid < 0)
+        {
+            perror("fork error");
+            exit(-1);
+        }
+        else if(pid == 0)
+        {
+            makeGray(path);
+        }
+        else
+        {
+            pid = wait(&status);
+            if(WIFEXITED(status))
+                printf("Child with pid %d, in photo graying process, ended with status %d\n", pid, WEXITSTATUS(status));
+        }
     }
     char buff[128];
     sprintf(buff, "Dimensiune: %ld\n", stats.st_size);
@@ -201,54 +268,71 @@ void citire_director(char *director_intrare, char *director_iesire){
     struct dirent *entry;
     struct stat stats;
     char path[300];
+    pid_t pid;
+    int status;
     while((entry = readdir(dir)) != NULL)
     {
-        if(strcmp(entry -> d_name, ".") != 0 && strcmp(entry -> d_name, "..") != 0)
+        pid = fork();
+        if(pid < 0)
         {
-            char file[300];
-            sprintf(file, "%s/%s_statistics.txt",director_iesire, entry -> d_name);
-            int fd;
-            fd = open (file, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-            if (fd == -1)
+            perror("fork error");
+            exit(-1);
+        }
+        else if(pid == 0){    
+            if(strcmp(entry -> d_name, ".") != 0 && strcmp(entry -> d_name, "..") != 0)
             {
-                perror("error open write");
-                exit (-1);
-            }
-            struct stat st;
-            if(stat(file,&st) == -1)
-            {
-            perror("statistics.txt stat error");
-            exit(1);
-            }
-
-            sprintf(path, "%s/%s", director_intrare, entry -> d_name);
-            if(stat(path, &stats) == -1)
-            {
-                perror("err stat");
+                char file[300];
+                sprintf(file, "%s/%s_statistics.txt",director_iesire, entry -> d_name);
+                // printf("%s\n", file);
+                int fd;
+                fd = open (file, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+                if (fd == -1)
+                {
+                    perror("error open write");
+                    exit (-1);
+                }
+                struct stat st;
+                if(stat(file,&st) == -1)
+                {
+                perror("statistics.txt stat error");
                 exit(1);
-            }
-            if( entry->d_type == DT_LNK)
-            {
-                struct stat lstats;
-                if(lstat(path, &lstats) == -1)
+                }
+
+                sprintf(path, "%s/%s", director_intrare, entry -> d_name);
+                if(stat(path, &stats) == -1)
                 {
                     perror("err stat");
                     exit(1);
                 }
-                printStatsLeg(entry -> d_name, stats, lstats, fd);
-            }
-            else
-            {
-                if( S_ISDIR(stats.st_mode) )
-                    printStatsDir(entry -> d_name, stats, fd);
+                if( entry->d_type == DT_LNK)
+                {
+                    struct stat lstats;
+                    if(lstat(path, &lstats) == -1)
+                    {
+                        perror("err stat");
+                        exit(1);
+                    }
+                    printStatsLeg(entry -> d_name, stats, lstats, fd);
+                }
                 else
-                    printStats(path, stats, fd);
+                {
+                    if( S_ISDIR(stats.st_mode) )
+                        printStatsDir(entry -> d_name, stats, fd);
+                    else
+                        printStats(path, stats, fd);
+                }
+                if(close(fd) == -1)
+                {
+                    perror("error close");
+                    exit(1);
+                }
             }
-            if(close(fd) == -1)
-            {
-                perror("error close");
-                exit(1);
-            }
+        }
+        else
+        {
+            pid = wait(&status);
+            if(WIFEXITED(status))
+                printf("Child with pid %d, ended with status %d\n", pid, WEXITSTATUS(status));
         }
     }
 
