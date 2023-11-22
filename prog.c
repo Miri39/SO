@@ -161,7 +161,7 @@ void printStats(char* path, struct stat stats, int fd){
         printXYSize(path, printableSize);
         strcat(printableString, printableSize);
         pid_t pid;
-        int status;
+        // int status;
         pid = fork();
         if(pid < 0)
         {
@@ -171,13 +171,14 @@ void printStats(char* path, struct stat stats, int fd){
         else if(pid == 0)
         {
             makeGray(path);
+            exit(1);
         }
-        else
-        {
-            pid = wait(&status);
-            if(WIFEXITED(status))
-                printf("Child with pid %d, in photo graying process, ended with status %d\n", pid, WEXITSTATUS(status));
-        }
+        // else
+        // {
+        //     pid = wait(&status);
+        //     if(WIFEXITED(status))
+        //         printf("Child with pid %d, in photo graying process, ended with status %d\n", pid, WEXITSTATUS(status));
+        // }
     }
     char buff[128];
     sprintf(buff, "Dimensiune: %ld\n", stats.st_size);
@@ -278,7 +279,8 @@ void citire_director(char *director_intrare, char *director_iesire){
             perror("fork error");
             exit(-1);
         }
-        else if(pid == 0){    
+        else if(pid == 0)
+        {
             if(strcmp(entry -> d_name, ".") != 0 && strcmp(entry -> d_name, "..") != 0)
             {
                 char file[300];
@@ -327,13 +329,14 @@ void citire_director(char *director_intrare, char *director_iesire){
                     exit(1);
                 }
             }
+            exit(1);
         }
-        else
-        {
-            pid = wait(&status);
-            if(WIFEXITED(status))
-                printf("Child with pid %d, ended with status %d\n", pid, WEXITSTATUS(status));
-        }
+
+    }
+    while( (pid = wait(&status)) != -1)
+    {
+        if(WIFEXITED(status))
+            printf("Child with pid %d, ended with status %d\n", pid, WEXITSTATUS(status));
     }
 
     if(closedir(dir) == -1){
