@@ -9,6 +9,45 @@
 #include <time.h>
 #include <sys/wait.h>
 
+int getXYSize(char *file)
+{
+    int fd;
+    fd = open (file, O_RDONLY);
+    if (fd == -1)
+    {
+        perror("error open xy");
+        exit (-1);
+    }
+    int inaltimea, lungimea;
+    lseek(fd, 18, SEEK_SET);
+    if(read(fd, &inaltimea, sizeof(int)) != sizeof(int))
+    {
+        if(close(fd) ==  -1)
+        {
+            perror("error close");
+            exit(1);
+        }
+        perror("error read");
+        exit(1);
+    }
+    if(read(fd, &lungimea, sizeof(int)) != sizeof(int))
+    {
+        if(close(fd) ==  -1)
+        {
+            perror("error close");
+            exit(1);
+        }
+        perror("error read");
+        exit(1);
+    }
+    if(close(fd) ==  -1)
+    {
+        perror("error close");
+        exit(1);
+    }
+    return lungimea * inaltimea;
+}
+
 void printXYSize(char *file, char* rez)
 {
     int fd;
@@ -103,7 +142,7 @@ char* getOthersPermisions(char* permisions, struct stat stats){
     return permisions;
 }
 
-void makeGray(char *file)
+void makeGray(char *file, int size)
 {
     int fd;
     fd = open (file, O_RDWR);
@@ -112,148 +151,209 @@ void makeGray(char *file)
         perror("error open gray");
         exit (-1);
     }
-    float gray;
-    unsigned char rgb[3];
     lseek(fd, 54, SEEK_SET);
-    for(int i = 0; i < 3; i++)
-        if(read(fd, &rgb[i], sizeof(unsigned char)) != sizeof(unsigned char))
+    unsigned char buffer[3 * size];
+    int wtf;
+    if((wtf = read(fd, buffer, sizeof(buffer))) != 3 * size)
+    {
+        if(close(fd) ==  -1)
         {
-            if(close(fd) ==  -1)
-            {
-                perror("error close rgb");
-                exit(1);
-            }
-            perror("error read rgb");
+            perror("error close rgb\n");
             exit(1);
         }
-    gray = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.144 + rgb[2];
-    printf("--------------%f\n", gray);
-    
+        perror("error read rgb\n");
+        exit(1);
+    }
+    for(int pixel = 0; pixel < 3 * size; pixel = pixel + 3)
+    {
+        unsigned char gray = 0.299 * buffer[pixel] + 0.587 * buffer[pixel + 1] + 0.144 + buffer[pixel + 2];
+        buffer[pixel] = gray;
+        buffer[pixel + 1] = gray;
+        buffer[pixel + 2] = gray;
+    }
     lseek(fd, 54, SEEK_SET);
-    for(int i = 0; i < 3; i++)
-        if(write(fd, &gray, sizeof(unsigned char)) != 1)
+    if(write(fd, buffer, 3 * size) != 3 * size)
+    {
+        printf("da");
+        if(close(fd) ==  -1)
         {
-            if(close(fd) ==  -1)
-            {
-                perror("error close rgb");
-                exit(1);
-            }
-            perror("error read rgb");
+            perror("error close rgb\n");
             exit(1);
         }
-    
+        perror("error write rgb\n");
+        exit(1);
+    }
     if(close(fd) ==  -1)
     {
         perror("error close rgb");
         exit(1);
     }
-    
 }
 
 void printStats(char* path, struct stat stats, int fd){
+    pid_t pid;
+    int contor = 0;
+    pid = fork();
+    if(pid < 0)
+    {
+        perror("fork error");
+        exit(-1);
+    }
     char permisions[4];
     char printableString[1024];
     char *name = strchr(path, '/') + 1;
-    sprintf(printableString, "Name: %s\n", name);
-    if(strstr(name, ".bmp"))
+    int size = 0;
+    if(pid == 0)
     {
-        char printableSize[128];
-        printXYSize(path, printableSize);
-        strcat(printableString, printableSize);
-        pid_t pid;
-        // int status;
-        pid = fork();
-        if(pid < 0)
+        sprintf(printableString, "Name: %s\n", name);
+        contor++;
+        if(strstr(name, ".bmp"))
         {
-            perror("fork error");
-            exit(-1);
+            char printableSize[128];
+            printXYSize(path, printableSize);
+            strcat(printableString, printableSize);
+            contor += 2;
         }
-        else if(pid == 0)
+        char buff[128];
+        sprintf(buff, "Dimensiune: %ld\n", stats.st_size);
+        strcat(printableString, buff);
+        contor++;
+
+        sprintf(buff, "User: %d\n", stats.st_uid);
+        strcat(printableString, buff);
+        contor++;
+
+        sprintf(buff, "Last Modification: %s", ctime(&stats.st_mtime));
+        strcat(printableString, buff);
+        contor++;
+        sprintf(buff, "Legaturi: %ld\n", stats.st_nlink);
+        strcat(printableString, buff);
+        contor++;
+        sprintf(buff, "Permisiuni User: %s\n", (getUserPermisions(permisions,stats)));
+        strcat(printableString, buff);
+        contor++;
+        sprintf(buff, "Permisiuni Group: %s\n", (getGroupPermisions(permisions,stats)));
+        strcat(printableString, buff);
+        contor++;
+        sprintf(buff, "Permisiuni Others: %s\n", (getOthersPermisions(permisions,stats)));
+        strcat(printableString, buff);
+        contor++;
+
+        if(write(fd,printableString, strlen(printableString)) == -1)
         {
-            makeGray(path);
-            exit(1);
+        perror("error write");
+        exit(1);
         }
-        // else
-        // {
-        //     pid = wait(&status);
-        //     if(WIFEXITED(status))
-        //         printf("Child with pid %d, in photo graying process, ended with status %d\n", pid, WEXITSTATUS(status));
-        // }
+        exit(contor);
     }
-    char buff[128];
-    sprintf(buff, "Dimensiune: %ld\n", stats.st_size);
-    strcat(printableString, buff);
-    sprintf(buff, "User: %d\n", stats.st_uid);
-    strcat(printableString, buff);
-    sprintf(buff, "Last Modification: %s", ctime(&stats.st_mtime));
-    strcat(printableString, buff);
-    sprintf(buff, "Legaturi: %ld\n", stats.st_nlink);
-    strcat(printableString, buff);
-    sprintf(buff, "Permisiuni User: %s\n", (getUserPermisions(permisions,stats)));
-    strcat(printableString, buff);
-    sprintf(buff, "Permisiuni Group: %s\n", (getGroupPermisions(permisions,stats)));
-    strcat(printableString, buff);
-    sprintf(buff, "Permisiuni Others: %s\n", (getOthersPermisions(permisions,stats)));
-    strcat(printableString, buff);
-    sprintf(buff, "\n");
-    strcat(printableString, buff);
-    if(write(fd,printableString, strlen(printableString)) == -1)
+    else
     {
-      perror("error write");
-      exit(1);
+        if(strstr(name, ".bmp"))
+        {
+            pid = fork();
+            if(pid < 0)
+            {
+                perror("fork error");
+                exit(-1);
+            }
+            else if(pid == 0)
+            {
+                size = getXYSize(path);
+                makeGray(path, size);
+                exit(0);
+            }
+        }
     }
 }
 
 void printStatsLeg(char* name, struct stat stats, struct stat lstats, int fd){
-    char permisions[4];
-    char printableString[1024];
-
-    sprintf(printableString, "Numele: %s\n", name);
-
-    char buff[128];
-
-    sprintf(buff, "Dimensiune fisier: %ld\n", stats.st_size);
-    strcat(printableString, buff);
-    sprintf(buff, "Dimensiune legatura: %ld\n", lstats.st_size);
-    strcat(printableString, buff);
-    sprintf(buff, "Permisiuni User: %s\n", (getUserPermisions(permisions,stats)));
-    strcat(printableString, buff);
-    sprintf(buff, "Permisiuni Group: %s\n", (getGroupPermisions(permisions,stats)));
-    strcat(printableString, buff);
-    sprintf(buff, "Permisiuni Others: %s\n", (getOthersPermisions(permisions,stats)));
-    strcat(printableString, buff);
-    sprintf(buff, "\n");
-    strcat(printableString, buff);
-
-    if(write(fd, printableString, strlen(printableString)) == -1)
+    pid_t pid;
+    int contor = 0;
+    pid = fork();
+    if(pid < 0)
     {
-      perror("error write");
-      exit(1);
+        perror("fork error");
+        exit(-1);
+    }
+    if(pid == 0)
+    {
+        char permisions[4];
+        char printableString[1024];
+
+        sprintf(printableString, "Numele: %s\n", name);
+        contor++;
+
+        char buff[128];
+
+        sprintf(buff, "Dimensiune fisier: %ld\n", stats.st_size);
+        strcat(printableString, buff);
+        contor++;
+
+        sprintf(buff, "Dimensiune legatura: %ld\n", lstats.st_size);
+        strcat(printableString, buff);
+        contor++;
+
+        sprintf(buff, "Permisiuni User: %s\n", (getUserPermisions(permisions,stats)));
+        strcat(printableString, buff);
+        contor++;
+
+        sprintf(buff, "Permisiuni Group: %s\n", (getGroupPermisions(permisions,stats)));
+        strcat(printableString, buff);
+        contor++;
+
+        sprintf(buff, "Permisiuni Others: %s\n", (getOthersPermisions(permisions,stats)));
+        strcat(printableString, buff);
+        contor++;
+
+        if(write(fd, printableString, strlen(printableString)) == -1)
+        {
+        perror("error write");
+        exit(1);
+        }
+        exit(contor);
     }
 }
 
 void printStatsDir(char* name, struct stat stats, int fd){
-    char permisions[4];
-    char printableString[1024];
-
-    sprintf(printableString, "Numele: %s\n", name);
-
-    char buff[128];
-    sprintf(buff, "User: %d\n", stats.st_uid);
-    strcat(printableString, buff);
-    sprintf(buff, "Permisiuni User: %s\n", (getUserPermisions(permisions,stats)));
-    strcat(printableString, buff);
-    sprintf(buff, "Permisiuni Group: %s\n", (getGroupPermisions(permisions,stats)));
-    strcat(printableString, buff);
-    sprintf(buff, "Permisiuni Others: %s\n", (getOthersPermisions(permisions,stats)));
-    strcat(printableString, buff);
-    sprintf(buff, "\n");
-    strcat(printableString, buff);
-
-    if(write(fd, printableString, strlen(printableString)) == -1)
+    pid_t pid;
+    int contor = 0;
+    pid = fork();
+    if(pid < 0)
     {
-      perror("error write");
-      exit(1);
+        perror("fork error");
+        exit(-1);
+    }
+    if(pid == 0)
+    {
+        char permisions[4];
+        char printableString[1024];
+
+        sprintf(printableString, "Numele: %s\n", name);
+        contor++;
+
+        char buff[128];
+        sprintf(buff, "User: %d\n", stats.st_uid);
+        strcat(printableString, buff);
+        contor++;
+        
+        sprintf(buff, "Permisiuni User: %s\n", (getUserPermisions(permisions,stats)));
+        strcat(printableString, buff);
+        contor++;
+
+        sprintf(buff, "Permisiuni Group: %s\n", (getGroupPermisions(permisions,stats)));
+        strcat(printableString, buff);
+        contor++;
+
+        sprintf(buff, "Permisiuni Others: %s\n", (getOthersPermisions(permisions,stats)));
+        strcat(printableString, buff);
+        contor++;
+
+        if(write(fd, printableString, strlen(printableString)) == -1)
+        {
+            perror("error write");
+            exit(1);
+        }
+        exit(contor);
     }
 }
 
@@ -273,14 +373,6 @@ void citire_director(char *director_intrare, char *director_iesire){
     int status;
     while((entry = readdir(dir)) != NULL)
     {
-        pid = fork();
-        if(pid < 0)
-        {
-            perror("fork error");
-            exit(-1);
-        }
-        else if(pid == 0)
-        {
             if(strcmp(entry -> d_name, ".") != 0 && strcmp(entry -> d_name, "..") != 0)
             {
                 char file[300];
@@ -329,8 +421,6 @@ void citire_director(char *director_intrare, char *director_iesire){
                     exit(1);
                 }
             }
-            exit(1);
-        }
 
     }
     while( (pid = wait(&status)) != -1)
