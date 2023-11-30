@@ -9,6 +9,9 @@
 #include <time.h>
 #include <sys/wait.h>
 
+#define BMP_FILE strstr(name, ".bmp")
+#define NOT_BMP_FILE !strstr(name, ".bmp")
+
 int getXYSize(char *file)
 {
     int fd;
@@ -193,21 +196,28 @@ void makeGray(char *file, int size)
 void printStats(char* path, struct stat stats, int fd){
     pid_t pid;
     int contor = 0;
+    char permisions[4];
+    char printableString[1024];
+    char *name = strchr(path, '/') + 1;
+    int size = 0;
+    //pipe
+    int pfd[2];
+    if(pipe(pfd) < 0)
+    {
+        perror("error pipe");
+        exit(-1);
+    }
     pid = fork();
     if(pid < 0)
     {
         perror("fork error");
         exit(-1);
     }
-    char permisions[4];
-    char printableString[1024];
-    char *name = strchr(path, '/') + 1;
-    int size = 0;
     if(pid == 0)
     {
         sprintf(printableString, "Name: %s\n", name);
         contor++;
-        if(strstr(name, ".bmp"))
+        if(BMP_FILE)
         {
             char printableSize[128];
             printXYSize(path, printableSize);
@@ -244,11 +254,32 @@ void printStats(char* path, struct stat stats, int fd){
         perror("error write");
         exit(1);
         }
+        if(NOT_BMP_FILE)
+        {
+            close(pfd[0]); //inchidem capatul de citire
+            char text[200];
+            int fd;
+            fd = open (path, O_RDONLY);
+            if (fd == -1)
+            {
+                perror("error open read");
+                exit (-1);
+            }
+            // if(read(fd, &inaltimea, sizeof(int)) != sizeof(int)
+            read(fd, &text, sizeof(text));
+            if(write(pfd[1], text, sizeof(text)) == -1)
+            {
+                perror("error write pipe");
+                exit(-1);
+            }
+            close(pfd[1]);
+            close(fd);
+        }
         exit(contor);
     }
     else
     {
-        if(strstr(name, ".bmp"))
+        if(BMP_FILE)
         {
             pid = fork();
             if(pid < 0)
@@ -263,6 +294,30 @@ void printStats(char* path, struct stat stats, int fd){
                 exit(0);
             }
         }
+    }
+    if(NOT_BMP_FILE)
+    {
+        pid = fork();
+        if(pid < 0)
+        {
+            perror("fork error");
+            exit(-1);
+        }
+        if(pid == 0)
+        {
+            close(pfd[1]);
+            char buff[200];
+            ssize_t bytesRead;
+            while((bytesRead = read(pfd[0], buff, sizeof(buff)))> 0)
+            {
+                write(1, buff, bytesRead);
+            }
+            close(pfd[0]);
+            exit(55);
+        }
+        close(pfd[0]);
+        close(pfd[1]);
+        
     }
 }
 
@@ -307,7 +362,7 @@ void printStatsLeg(char* name, struct stat stats, struct stat lstats, int fd){
 
         if(write(fd, printableString, strlen(printableString)) == -1)
         {
-        perror("error write");
+        perror("error write leg");
         exit(1);
         }
         exit(contor);
@@ -350,7 +405,7 @@ void printStatsDir(char* name, struct stat stats, int fd){
 
         if(write(fd, printableString, strlen(printableString)) == -1)
         {
-            perror("error write");
+            perror("error write dir");
             exit(1);
         }
         exit(contor);
@@ -438,7 +493,7 @@ void citire_director(char *director_intrare, char *director_iesire){
 
 int main (int argc, char *argv[])
 {
-    if(argc != 3)
+    if(argc != 4)
     {
         perror("wrong number of arguments");
         exit(1);
