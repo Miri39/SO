@@ -12,6 +12,9 @@
 #define BMP_FILE strstr(name, ".bmp")
 #define NOT_BMP_FILE !strstr(name, ".bmp")
 
+char containedCharacter[2];
+int sumFromScript = 0;
+
 int getXYSize(char *file)
 {
     int fd;
@@ -202,6 +205,7 @@ void printStats(char* path, struct stat stats, int fd){
     int size = 0;
     //pipe
     int pfd[2];
+    int altPfd[2];
     if(pipe(pfd) < 0)
     {
         perror("error pipe");
@@ -219,6 +223,8 @@ void printStats(char* path, struct stat stats, int fd){
         contor++;
         if(BMP_FILE)
         {
+            close(pfd[0]);
+            close(pfd[1]);
             char printableSize[128];
             printXYSize(path, printableSize);
             strcat(printableString, printableSize);
@@ -266,12 +272,13 @@ void printStats(char* path, struct stat stats, int fd){
                 exit (-1);
             }
             // if(read(fd, &inaltimea, sizeof(int)) != sizeof(int)
-            read(fd, &text, sizeof(text));
-            if(write(pfd[1], text, sizeof(text)) == -1)
-            {
-                perror("error write pipe");
-                exit(-1);
-            }
+            int bytesRead;
+            while((bytesRead = read(fd, &text, sizeof(text))) > 0)
+                if(write(pfd[1], text, bytesRead) == -1)
+                {
+                    perror("error write pipe");
+                    exit(-1);
+                }
             close(pfd[1]);
             close(fd);
         }
@@ -297,6 +304,11 @@ void printStats(char* path, struct stat stats, int fd){
     }
     if(NOT_BMP_FILE)
     {
+        if(pipe(altPfd) < 0)
+        {
+            perror("error pipe");
+            exit(-1);
+        }
         pid = fork();
         if(pid < 0)
         {
@@ -306,18 +318,29 @@ void printStats(char* path, struct stat stats, int fd){
         if(pid == 0)
         {
             close(pfd[1]);
-            char buff[200];
-            ssize_t bytesRead;
-            while((bytesRead = read(pfd[0], buff, sizeof(buff)))> 0)
-            {
-                write(1, buff, bytesRead);
-            }
+            close(altPfd[0]);
+
+            dup2(pfd[0], 0);
             close(pfd[0]);
-            exit(55);
+            dup2(altPfd[1],1);
+            close(altPfd[1]);
+            execlp("bash", "bash", "rewrite", containedCharacter, NULL);
+            perror("erroare execlp");
+            
+            exit(-1);
         }
         close(pfd[0]);
         close(pfd[1]);
-        
+        close(altPfd[1]);
+
+        char buff[16];
+        int bytesRead;
+        while((bytesRead = read(altPfd[0], buff, sizeof(buff))) > 0) //asta trebuie putin modificata
+        {
+            // printf("%s", buff);
+            sumFromScript += atoi(buff);
+        }
+        close(altPfd[0]);
     }
 }
 
@@ -496,11 +519,17 @@ int main (int argc, char *argv[])
     if(argc != 4)
     {
         perror("wrong number of arguments");
-        exit(1);
+        exit(-1);
     }
-    
+    if(strlen(argv[3]) != 1)
+    {
+        perror("not a char in command line arg");
+        exit(-1);
+    }
     char *director_intrare = argv[1];
     char *directpr_iesire = argv[2];
+    strcpy(containedCharacter,argv[3]);
     citire_director(director_intrare, directpr_iesire);
+    printf("Au fost identificate in total %d propozitii corecte care contin caracterul %c\n", sumFromScript, argv[3][0]);
     return 0;
 }

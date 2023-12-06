@@ -8,6 +8,7 @@ functie()
     fi
     chr=$1;
     count=0;
+    # echo "6"
     while  read -r line;
     do
 	if((echo "$line" | grep -E "^[A-Z][A-Za-z0-9 ,.!?]*[.!?]$" | grep -v ",si" | grep -E -c $chr)>0) 
@@ -15,6 +16,6 @@ functie()
             ((count++))
 	fi
     done
-    echo "Nr de linii corecte e: $count"
+    echo "$count"
 }
 functie $1
