@@ -8,10 +8,9 @@ functie()
     fi
     chr=$1;
     count=0;
-    # echo "6"
     while  read -r line;
     do
-	if((echo "$line" | grep -E "^[A-Z][A-Za-z0-9 ,.!?]*[.!?]$" | grep -v ",si" | grep -E -c $chr)>0) 
+	if((echo "$line" | grep -E "^[A-Z][A-Za-z0-9 ,.!?]*[.!?]$" | grep -v ",si" | grep -E -c $chr)>0)
 	then
             ((count++))
 	fi

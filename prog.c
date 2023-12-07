@@ -15,8 +15,14 @@
 char containedCharacter[2];
 int sumFromScript = 0;
 
-int getXYSize(char *file)
+typedef struct xySize{
+    int lungime;
+    int inaltime;
+}xySize;
+
+xySize getXYSize(char *file)
 {
+    xySize xy;
     int fd;
     fd = open (file, O_RDONLY);
     if (fd == -1)
@@ -51,50 +57,19 @@ int getXYSize(char *file)
         perror("error close");
         exit(1);
     }
-    return lungimea * inaltimea;
+    xy.inaltime = inaltimea;
+    xy.lungime = lungimea;
+    return xy;
 }
 
 void printXYSize(char *file, char* rez)
 {
-    int fd;
-    fd = open (file, O_RDONLY);
-    if (fd == -1)
-    {
-        perror("error open xy");
-        exit (-1);
-    }
-    int inaltimea, lungimea;
-    lseek(fd, 18, SEEK_SET);
-    if(read(fd, &inaltimea, sizeof(int)) != sizeof(int))
-    {
-        if(close(fd) ==  -1)
-        {
-            perror("error close");
-            exit(1);
-        }
-        perror("error read");
-        exit(1);
-    }
-    if(read(fd, &lungimea, sizeof(int)) != sizeof(int))
-    {
-        if(close(fd) ==  -1)
-        {
-            perror("error close");
-            exit(1);
-        }
-        perror("error read");
-        exit(1);
-    }
-    char buff[32];
-    sprintf(rez, "inaltime %d\n", inaltimea);
-    sprintf(buff, "lungimea %d\n", lungimea);
-    strcat(rez, buff);
+    xySize xy = getXYSize(file);
 
-    if(close(fd) ==  -1)
-    {
-        perror("error close");
-        exit(1);
-    }
+    char buff[32];
+    sprintf(rez, "inaltime %d\n", xy.inaltime);
+    sprintf(buff, "lungimea %d\n", xy.lungime);
+    strcat(rez, buff);
 }
 
 char* getUserPermisions(char* permisions, struct stat stats){
@@ -159,8 +134,8 @@ void makeGray(char *file, int size)
     }
     lseek(fd, 54, SEEK_SET);
     unsigned char buffer[3 * size];
-    int wtf;
-    if((wtf = read(fd, buffer, sizeof(buffer))) != 3 * size)
+    int bytes;
+    if((bytes = read(fd, buffer, sizeof(buffer))) != 3 * size)
     {
         if(close(fd) ==  -1)
         {
@@ -203,10 +178,9 @@ void printStats(char* path, struct stat stats, int fd){
     char printableString[1024];
     char *name = strchr(path, '/') + 1;
     int size = 0;
-    //pipe
-    int pfd[2];
-    int altPfd[2];
-    if(pipe(pfd) < 0)
+    int pfdToScript[2];
+    int pfdFromScript[2];
+    if(pipe(pfdToScript) < 0)
     {
         perror("error pipe");
         exit(-1);
@@ -223,8 +197,8 @@ void printStats(char* path, struct stat stats, int fd){
         contor++;
         if(BMP_FILE)
         {
-            close(pfd[0]);
-            close(pfd[1]);
+            close(pfdToScript[0]);
+            close(pfdToScript[1]);
             char printableSize[128];
             printXYSize(path, printableSize);
             strcat(printableString, printableSize);
@@ -262,7 +236,7 @@ void printStats(char* path, struct stat stats, int fd){
         }
         if(NOT_BMP_FILE)
         {
-            close(pfd[0]); //inchidem capatul de citire
+            close(pfdToScript[0]); //inchidem capatul de citire
             char text[200];
             int fd;
             fd = open (path, O_RDONLY);
@@ -271,15 +245,14 @@ void printStats(char* path, struct stat stats, int fd){
                 perror("error open read");
                 exit (-1);
             }
-            // if(read(fd, &inaltimea, sizeof(int)) != sizeof(int)
             int bytesRead;
             while((bytesRead = read(fd, &text, sizeof(text))) > 0)
-                if(write(pfd[1], text, bytesRead) == -1)
+                if(write(pfdToScript[1], text, bytesRead) == -1)
                 {
                     perror("error write pipe");
                     exit(-1);
                 }
-            close(pfd[1]);
+            close(pfdToScript[1]);
             close(fd);
         }
         exit(contor);
@@ -296,7 +269,8 @@ void printStats(char* path, struct stat stats, int fd){
             }
             else if(pid == 0)
             {
-                size = getXYSize(path);
+                xySize xy = getXYSize(path);
+                size = xy.inaltime * xy.lungime;
                 makeGray(path, size);
                 exit(0);
             }
@@ -304,7 +278,7 @@ void printStats(char* path, struct stat stats, int fd){
     }
     if(NOT_BMP_FILE)
     {
-        if(pipe(altPfd) < 0)
+        if(pipe(pfdFromScript) < 0)
         {
             perror("error pipe");
             exit(-1);
@@ -317,30 +291,25 @@ void printStats(char* path, struct stat stats, int fd){
         }
         if(pid == 0)
         {
-            close(pfd[1]);
-            close(altPfd[0]);
+            close(pfdToScript[1]);
+            close(pfdFromScript[0]);
 
-            dup2(pfd[0], 0);
-            close(pfd[0]);
-            dup2(altPfd[1],1);
-            close(altPfd[1]);
-            execlp("bash", "bash", "rewrite", containedCharacter, NULL);
+            dup2(pfdToScript[0], 0);
+            close(pfdToScript[0]);
+            dup2(pfdFromScript[1],1);
+            close(pfdFromScript[1]);
+            execlp("bash", "bash", "rewrite", containedCharacter, NULL); //datorita modului in care e facut scriptul, o linie care se va rermina cu EOF in loc de \n, nu va fi procesata
             perror("erroare execlp");
-            
             exit(-1);
         }
-        close(pfd[0]);
-        close(pfd[1]);
-        close(altPfd[1]);
+        close(pfdToScript[0]);
+        close(pfdToScript[1]);
+        close(pfdFromScript[1]);
 
-        char buff[16];
-        int bytesRead;
-        while((bytesRead = read(altPfd[0], buff, sizeof(buff))) > 0) //asta trebuie putin modificata
-        {
-            // printf("%s", buff);
-            sumFromScript += atoi(buff);
-        }
-        close(altPfd[0]);
+        char buff[6];
+        read(pfdFromScript[0], buff, sizeof(buff));
+        sumFromScript += atoi(buff);
+        close(pfdFromScript[0]);
     }
 }
 
@@ -455,7 +424,6 @@ void citire_director(char *director_intrare, char *director_iesire){
             {
                 char file[300];
                 sprintf(file, "%s/%s_statistics.txt",director_iesire, entry -> d_name);
-                // printf("%s\n", file);
                 int fd;
                 fd = open (file, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
                 if (fd == -1)
